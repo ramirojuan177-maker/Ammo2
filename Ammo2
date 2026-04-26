@@ -1,0 +1,323 @@
+script_name("AmmoCounter_kz")
+script_author("kaizer")
+script_version("1.8")
+
+require("moonloader")
+local imgui, m = pcall(require, 'mimgui')
+local inicfg = require 'inicfg'
+local encoding = require('encoding')
+local faicons = require('fAwesome6') 
+local bit = require 'bit'
+
+encoding.default = 'CP1251'
+local u8 = encoding.UTF8
+
+if not imgui then return end
+
+-- ==========================================
+-- 0. CONFIGURACIÓN
+-- ==========================================
+local script_name_fixed = "AmmoCounter • kz" 
+local config_file = "JAJAJA_PV8.ini" 
+local texturePath = getWorkingDirectory() .. "/resource/ammo/icon.png"
+
+local ResX, ResY = getScreenResolution()
+local scaleX, scaleY = ResX / 2400, ResY / 1080
+
+local default_settings = {
+    Main = { Visible = true, PosX = 2210 * scaleX, PosY = 177 * scaleY, Scale = 56, WidthScale = 1.0, HeightScale = 1.0, BorderSize = 2, AlwaysShow = true, RGBMode = false },
+    Icon = { Enabled = true, Size = 40, PosX = (2210 * scaleX) - 50, PosY = 177 * scaleY },
+    Colors = { TextR = 1.0, TextG = 1.0, TextB = 1.0, TextA = 1.0, BorderR = 0.0, BorderG = 0.0, BorderB = 0.0, BorderA = 1.0 },
+    Menu = { ShowButton = true, ButtonPosX = 1749 * scaleX, ButtonPosY = 983 * scaleY, ButtonSize = 50 }
+}
+
+local cfg = inicfg.load(default_settings, config_file)
+
+-- ==========================================
+-- 1. VARIABLES MIMGUI
+-- ==========================================
+local renderWindow = m.new.bool(false)
+local tab = m.new.int(1)
+
+local gui = {
+    always_show = m.new.bool(cfg.Main.AlwaysShow),
+    rgb_mode = m.new.bool(cfg.Main.RGBMode), 
+    show_button = m.new.bool(cfg.Menu.ShowButton),
+    img_enabled = m.new.bool(cfg.Icon.Enabled),
+    img_size = m.new.int(cfg.Icon.Size),
+    img_pos_x = m.new.float(cfg.Icon.PosX),
+    img_pos_y = m.new.float(cfg.Icon.PosY),
+    pos_x = m.new.float(cfg.Main.PosX),
+    pos_y = m.new.float(cfg.Main.PosY),
+    width_scale = m.new.float(cfg.Main.WidthScale or 1.0),
+    height_scale = m.new.float(cfg.Main.HeightScale or 1.0),
+    border = m.new.int(cfg.Main.BorderSize),
+    btn_x = m.new.float(cfg.Menu.ButtonPosX),
+    btn_y = m.new.float(cfg.Menu.ButtonPosY),
+    btn_size = m.new.int(cfg.Menu.ButtonSize),
+    col_text = m.new.float[4](cfg.Colors.TextR, cfg.Colors.TextG, cfg.Colors.TextB, cfg.Colors.TextA),
+    col_border = m.new.float[4](cfg.Colors.BorderR, cfg.Colors.BorderG, cfg.Colors.BorderB, cfg.Colors.BorderA)
+}
+
+local tabs = {
+    faicons('house')..u8'\tPrincipal',
+    faicons('screwdriver_wrench')..u8'\tVisuales',
+    faicons('image')..u8'\tIcono',
+    faicons('floppy_disk')..u8'\tGuardado',
+}
+
+-- ==========================================
+-- 2. FUNCIONES DE DISEÑO
+-- ==========================================
+
+local function CloseButton(str_id, value, size, rounding)
+    size = size or 23; rounding = rounding or 50
+    local DL = m.GetWindowDrawList()
+    local p = m.GetCursorScreenPos()
+    local result = m.InvisibleButton(str_id, m.ImVec2(size, size))
+    if result then value[0] = false end
+    local hovered = m.IsItemHovered()
+    local col = m.ColorConvertFloat4ToU32(m.GetStyle().Colors[m.Col.Border])
+    local col_bg = hovered and 0x60000000 or 0x30000000
+    local offs = (size / 4)
+    DL:AddRectFilled(p, m.ImVec2(p.x + size, p.y + size), col_bg, rounding, 15)
+    DL:AddLine(m.ImVec2(p.x + offs, p.y + offs), m.ImVec2(p.x + size - offs, p.y + size - offs), col, size / 10)
+    DL:AddLine(m.ImVec2(p.x + size - offs, p.y + offs), m.ImVec2(p.x + offs, p.y + size - offs), col, size / 10)
+    return result
+end
+
+function m.BeginTitleChild(title, size, rounding, offset, panelBool)
+    if panelBool == nil then panelBool = true end
+    offset = offset or 130
+    local DL = m.GetWindowDrawList()
+    local posS = m.GetCursorScreenPos()
+    local sizeT = m.CalcTextSize(title)
+    m.PushStyleColor(m.Col.ChildBg, m.ImVec4(0, 0, 0, 0))
+    m.PushStyleColor(m.Col.Border, m.ImVec4(0, 0, 0, 0))
+    m.BeginChild(title.."##child", size, true, m.WindowFlags.NoScrollbar)
+    if panelBool then m.SetCursorPosY(35) end
+    m.PopStyleColor(2)
+    DL:AddRect(posS, m.ImVec2(posS.x + size.x, posS.y + size.y), m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.Button]), rounding, nil, 2)
+    if panelBool then
+        DL:AddRectFilled(posS, m.ImVec2(posS.x + size.x, posS.y + 25), m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.Button]), rounding, 1+2)
+        DL:AddText(m.ImVec2(posS.x + offset, posS.y + 12 - (sizeT.y / 2)), m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.Text]), title)
+    end
+end
+
+function m.CustomMenu(labels, selected, size)
+    local draw_list = m.GetWindowDrawList()
+    for i, v in ipairs(labels) do
+        local cPos = m.GetCursorPos()
+        local p = m.GetCursorScreenPos()
+        if m.InvisibleButton(v..'##'..i, size) then selected[0] = i end
+        local isSelected = (selected[0] == i)
+        if isSelected then
+            draw_list:AddRectFilledMultiColor(m.ImVec2(p.x, p.y), m.ImVec2(p.x + size.x, p.y + size.y), m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.Button]), 0, 0, m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.Button]))
+        end
+        m.SetCursorPos(m.ImVec2(cPos.x + 15, cPos.y + (size.y - m.CalcTextSize(v).y) / 2))
+        m.TextColored(isSelected and m.GetStyle().Colors[m.Col.ButtonHovered] or m.ImVec4(0.6, 0.6, 0.6, 0.6), v)
+        draw_list:AddRectFilled(p, m.ImVec2(p.x + 3.5, p.y + size.y), isSelected and m.GetColorU32Vec4(m.GetStyle().Colors[m.Col.ButtonHovered]) or 0)
+        m.SetCursorPos(m.ImVec2(cPos.x, cPos.y + size.y))
+    end
+end
+
+-- ==========================================
+-- 3. RENDER UI
+-- ==========================================
+
+m.OnInitialize(function()
+    local style = m.GetStyle()
+    style.WindowPadding = m.ImVec2(0, 0)
+    style.WindowRounding = 18
+    style.ChildRounding = 14
+    style.FrameRounding = 8
+    style.Colors[m.Col.WindowBg] = m.ImVec4(0.06, 0.06, 0.06, 1.00)
+    style.Colors[m.Col.ChildBg] = m.ImVec4(0.08, 0.08, 0.08, 1.00)
+    style.Colors[m.Col.Border] = m.ImVec4(0.30, 0.30, 0.30, 1.00)
+    style.Colors[m.Col.Button] = m.ImVec4(0.41, 0.19, 0.63, 0.44)
+    style.Colors[m.Col.ButtonHovered] = m.ImVec4(0.41, 0.19, 0.63, 1.00)
+    style.Colors[m.Col.ButtonActive] = m.ImVec4(0.50, 0.25, 0.75, 1.00)
+    style.Colors[m.Col.CheckMark] = m.ImVec4(0.41, 0.19, 0.63, 1.00)
+    style.Colors[m.Col.FrameBg] = m.ImVec4(0.12, 0.12, 0.12, 1.00)
+
+    local config = m.ImFontConfig()
+    config.MergeMode = true
+    local iconRanges = m.new.ImWchar[3](faicons.min_range, faicons.max_range, 0)
+    m.GetIO().Fonts:AddFontFromMemoryCompressedBase85TTF(faicons.get_font_data_base85('solid'), 14, config, iconRanges)
+    
+    local fontPath = getWorkingDirectory() .. "/lib/AmmoCounter/uptodown.ttf"
+    fontAmmo = doesFileExist(fontPath) and m.GetIO().Fonts:AddFontFromFileTTF(fontPath, cfg.Main.Scale) or m.GetIO().Fonts:AddFontDefault()
+end)
+
+m.OnFrame(function() return gui.show_button[0] end, function()
+    m.SetNextWindowPos(m.ImVec2(gui.btn_x[0], gui.btn_y[0]), m.Cond.Always)
+    m.Begin("Launcher", nil, m.WindowFlags.NoDecoration + m.WindowFlags.NoBackground + m.WindowFlags.NoMove)
+    if m.Button("KZ", m.ImVec2(gui.btn_size[0], gui.btn_size[0])) then renderWindow[0] = not renderWindow[0] end
+    m.End()
+end)
+
+m.OnFrame(function() return renderWindow[0] end, function(self)
+    -- TAMAÑO FIJO 500x500
+    m.SetNextWindowSize(m.ImVec2(550, 350), m.Cond.Always)
+    m.Begin("##AmmoUI", renderWindow, m.WindowFlags.NoTitleBar + m.WindowFlags.NoResize)
+        local winSize = m.GetWindowSize()
+
+        m.BeginChild("##Sidebar", m.ImVec2(170, winSize.y), false)
+            m.SetCursorPosY(60)
+            m.CustomMenu(tabs, tab, m.ImVec2(145, 40))
+        m.EndChild()
+
+        m.SameLine()
+
+        m.BeginChild("##MainContent", m.ImVec2(winSize.x - 155, winSize.y), false)
+            m.SetCursorPos(m.ImVec2(m.GetWindowSize().x - 30, 5))
+            CloseButton("##CloseUI", renderWindow)
+
+            m.SetCursorPos(m.ImVec2(10, 45))
+
+            if tab[0] == 1 then -- PRINCIPAL
+                m.BeginTitleChild(u8"Opciones", m.ImVec2(325, 140), 8, 80)
+                    m.SetCursorPosX(15) m.Checkbox(u8"Siempre visible", gui.always_show)
+                    m.SetCursorPosX(15) m.Checkbox(u8"Boton", gui.show_button)
+                    m.SetCursorPosX(15) m.Checkbox(u8"Modo RGB", gui.rgb_mode)
+                m.EndChild()
+
+                m.SetCursorPos(m.ImVec2(10, 200))
+                m.BeginTitleChild(u8"Posicion", m.ImVec2(325, 120), 8, 120)
+                    m.SetCursorPosY(40)
+                    m.Columns(2, "##posCol", false)
+                    m.SetColumnWidth(0, 60)
+                    m.SetCursorPosX(15) m.Text(u8"X:") m.NextColumn()
+                    m.PushItemWidth(-15) m.SliderFloat("##px", gui.pos_x, 0, ResX) m.PopItemWidth() m.NextColumn()
+                    m.SetCursorPosX(15) m.Text(u8"Y:") m.NextColumn()
+                    m.PushItemWidth(-15) m.SliderFloat("##py", gui.pos_y, 0, ResY) m.PopItemWidth()
+                    m.Columns(1)
+                m.EndChild()
+
+            elseif tab[0] == 2 then -- VISUALES
+                m.BeginTitleChild(u8"Dimensiones", m.ImVec2(325, 160), 8, 110)
+                    m.SetCursorPosY(40)
+                    m.Columns(2, "##stretchCol", false)
+                    m.SetColumnWidth(0, 90)
+                    m.SetCursorPosX(15) m.Text(u8"Ancho:") m.NextColumn()
+                    m.PushItemWidth(-15) m.SliderFloat("##ws", gui.width_scale, 0.1, 5.0) m.PopItemWidth() m.NextColumn()
+                    m.SetCursorPosX(15) m.Text(u8"Alto:") m.NextColumn()
+                    m.PushItemWidth(-15) m.SliderFloat("##hs", gui.height_scale, 0.1, 5.0) m.PopItemWidth() m.NextColumn()
+                    m.SetCursorPosX(15) m.Text(u8"Borde:") m.NextColumn()
+                    m.PushItemWidth(-15) m.SliderInt("##bs", gui.border, 0, 10) m.PopItemWidth()
+                    m.Columns(1)
+                m.EndChild()
+
+                m.SetCursorPos(m.ImVec2(10, 220))
+                m.BeginTitleChild(u8"Colores", m.ImVec2(325, 120), 8, 120)
+                    m.SetCursorPosY(40)
+                    m.Columns(2, "##colorCol", false)
+                    m.SetColumnWidth(0, 100)
+                    m.SetCursorPosX(15) m.Text(u8"Ammo:") m.NextColumn()
+                    if not gui.rgb_mode[0] then m.PushItemWidth(-15) m.ColorEdit4("##txtc", gui.col_text, 128) m.PopItemWidth()
+                    else m.TextDisabled(u8"RGB Activo") end
+                    m.NextColumn()
+                    m.SetCursorPosX(15) m.Text(u8"Borde:") m.NextColumn()
+                    m.PushItemWidth(-15) m.ColorEdit4("##brdc", gui.col_border, 128) m.PopItemWidth()
+                    m.Columns(1)
+                m.EndChild()
+
+            elseif tab[0] == 3 then -- ICONO
+                m.BeginTitleChild(u8"Icono", m.ImVec2(325, 235), 8, 130)
+                    m.SetCursorPosX(15) m.Checkbox(u8"Usar Icono", gui.img_enabled)
+                    if gui.img_enabled[0] then
+                        m.Separator()
+                        m.SetCursorPosY(75)
+                        m.Columns(2, "##iconCol", false)
+                        m.SetColumnWidth(0, 80)
+                        m.SetCursorPosX(15) m.Text(u8"X:") m.NextColumn()
+                        m.PushItemWidth(-15) m.SliderFloat("##ix", gui.img_pos_x, 0, ResX) m.PopItemWidth() m.NextColumn()
+                        m.SetCursorPosX(15) m.Text(u8"Y:") m.NextColumn()
+                        m.PushItemWidth(-15) m.SliderFloat("##iy", gui.img_pos_y, 0, ResY) m.PopItemWidth() m.NextColumn()
+                        m.SetCursorPosX(15) m.Text(u8"Size:") m.NextColumn()
+                        m.PushItemWidth(-15) m.SliderInt("##is", gui.img_size, 10, 300) m.PopItemWidth()
+                        m.Columns(1)
+                    end
+                m.EndChild()
+
+            elseif tab[0] == 4 then -- GUARDADO
+                m.BeginTitleChild(u8"Configuracion", m.ImVec2(325, 180), 8, 100)
+                    m.SetCursorPosY(45)
+                    m.SetCursorPosX(20) m.Text(u8"Archivo: " .. config_file)
+                    m.Spacing()
+                    m.SetCursorPosX(15)
+                    if m.Button(u8"GUARDAR Y REINICIAR", m.ImVec2(295, 55)) then
+                        cfg.Main.AlwaysShow, cfg.Main.RGBMode = gui.always_show[0], gui.rgb_mode[0]
+                        cfg.Main.PosX, cfg.Main.PosY = gui.pos_x[0], gui.pos_y[0]
+                        cfg.Main.WidthScale, cfg.Main.HeightScale = gui.width_scale[0], gui.height_scale[0]
+                        cfg.Main.BorderSize = gui.border[0]
+                        cfg.Icon.Enabled, cfg.Icon.Size = gui.img_enabled[0], gui.img_size[0]
+                        cfg.Icon.PosX, cfg.Icon.PosY = gui.img_pos_x[0], gui.img_pos_y[0]
+                        cfg.Menu.ShowButton = gui.show_button[0]
+                        cfg.Colors.TextR, cfg.Colors.TextG, cfg.Colors.TextB, cfg.Colors.TextA = gui.col_text[0], gui.col_text[1], gui.col_text[2], gui.col_text[3]
+                        cfg.Colors.BorderR, cfg.Colors.BorderG, cfg.Colors.BorderB, cfg.Colors.BorderA = gui.col_border[0], gui.col_border[1], gui.col_border[2], gui.col_border[3]
+                        inicfg.save(cfg, config_file)
+                        thisScript():reload()
+                    end
+                m.EndChild()
+            end
+        m.EndChild()
+    m.End()
+end)
+
+-- ==========================================
+-- 4. LÓGICA DE FONDO
+-- ==========================================
+local ammoTexture = nil
+local weapon1, ultmbala = 0, 0
+local listArmas = {[22]=17, [23]=17, [24]=7, [25]=1, [26]=2, [27]=7, [28]=50, [29]=30, [30]=30, [31]=50, [32]=300, [33]=1, [34]=1, [35]=1, [36]=1}
+
+function DrawStretchedText(text, x, y, color, borderColor, borderSize)
+    if not fontAmmo then return end
+    local dl = m.GetBackgroundDrawList()
+    local oldScale = fontAmmo.Scale
+    fontAmmo.Scale = gui.width_scale[0]
+    m.PushFont(fontAmmo)
+    for dx = -borderSize, borderSize do
+        for dy = -borderSize, borderSize do
+            if dx ~= 0 or dy ~= 0 then dl:AddText(m.ImVec2(x + dx, y + (dy * gui.height_scale[0])), borderColor, text) end 
+        end 
+    end
+    dl:AddText(m.ImVec2(x, y), color, text)
+    m.PopFont()
+    fontAmmo.Scale = oldScale
+end
+
+m.OnFrame(function() return not isPauseMenuActive() end, function()
+    local weapon = getCurrentCharWeapon(PLAYER_PED)
+    if weapon ~= weapon1 then weapon1 = weapon; if listArmas[weapon] then ultmbala = listArmas[weapon] end end
+    if isCharShooting(PLAYER_PED) and listArmas[weapon] then
+        if ultmbala > 0 then ultmbala = ultmbala - 1 end
+        if ultmbala == 0 then ultmbala = listArmas[weapon] or 0 end
+    end
+    local textToDraw = nil
+    if listArmas[weapon] then textToDraw = string.format("%d", ultmbala)
+    elseif (weapon >= 16 and weapon <= 39) or weapon == 41 or weapon == 42 then textToDraw = string.format("%d", getAmmoInCharWeapon(PLAYER_PED, weapon))
+    elseif gui.always_show[0] then textToDraw = "0" end
+    if textToDraw then
+        local r, g, b, a
+        if gui.rgb_mode[0] then
+            local t = os.clock() * 1.5; r, g, b = math.sin(t)*.5+.5, math.sin(t+2)*.5+.5, math.sin(t+4)*.5+.5; a = gui.col_text[3]
+        else r, g, b, a = gui.col_text[0], gui.col_text[1], gui.col_text[2], gui.col_text[3] end
+        local colText = bit.bor(math.floor(r*255), bit.lshift(math.floor(g*255), 8), bit.lshift(math.floor(b*255), 16), bit.lshift(math.floor(a*255), 24))
+        local colBorder = bit.bor(math.floor(gui.col_border[0]*255), bit.lshift(math.floor(gui.col_border[1]*255), 8), bit.lshift(math.floor(gui.col_border[2]*255), 16), bit.lshift(math.floor(gui.col_border[3]*255), 24))
+        if gui.img_enabled[0] and ammoTexture then renderDrawTexture(ammoTexture, gui.img_pos_x[0], gui.img_pos_y[0], gui.img_size[0], gui.img_size[0], 0.0, -1) end
+        DrawStretchedText(textToDraw, gui.pos_x[0], gui.pos_y[0], colText, colBorder, gui.border[0])
+    end
+end)
+
+function main()
+    if thisScript().filename:match("([^\\/]+)%.luac?$") ~= script_name_fixed then
+        while not isSampAvailable() do wait(100) end
+        sampAddChatMessage("{ff0000}[Seguridad]: {ffffff}No renombres el script.", -1); thisScript():unload(); return
+    end
+    if doesFileExist(texturePath) then ammoTexture = renderLoadTextureFromFile(texturePath) end
+    while not isSampAvailable() do wait(200) end
+    sampRegisterChatCommand("ammo", function() renderWindow[0] = not renderWindow[0] end)
+    while true do wait(0) m.Process = renderWindow[0] end
+end
