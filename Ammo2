@@ -17,7 +17,7 @@ if not imgui then return end
 -- ==========================================
 -- 0. CONFIGURACIÓN
 -- ==========================================
-local script_name_fixed = "AmmoCounter • kz" 
+local script_name_fixed = "kz" 
 local config_file = "JAJAJA_PV8.ini" 
 local texturePath = getWorkingDirectory() .. "/resource/ammo/icon.png"
 
